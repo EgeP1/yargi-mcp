@@ -23,6 +23,7 @@ COPY mcp_server_main.py ./
 COPY anayasa_mcp_module ./anayasa_mcp_module
 COPY bddk_mcp_module ./bddk_mcp_module
 COPY bedesten_mcp_module ./bedesten_mcp_module
+COPY btk_mcp_module ./btk_mcp_module
 COPY danistay_mcp_module ./danistay_mcp_module
 COPY emsal_mcp_module ./emsal_mcp_module
 COPY gib_mcp_module ./gib_mcp_module

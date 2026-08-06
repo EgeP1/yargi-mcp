@@ -325,6 +325,14 @@ from bddk_mcp_module.models import (
     BddkSearchRequest
 )
 
+# BTK Module Imports
+from btk_mcp_module.client import BtkApiClient
+from btk_mcp_module.models import (
+    BtkDocumentMarkdown,
+    BtkSearchRequest,
+    BtkSearchResult
+)
+
 # GİB Module Imports
 from gib_mcp_module.client import GibApiClient
 from gib_mcp_module.models import (
@@ -365,6 +373,7 @@ sayistay_client_instance = SayistayApiClient()
 sayistay_unified_client_instance = SayistayUnifiedClient()
 kvkk_client_instance = KvkkApiClient()
 bddk_client_instance = BddkApiClient()
+btk_client_instance = BtkApiClient()
 gib_client_instance = GibApiClient()
 sigorta_tahkim_client_instance = SigortaTahkimApiClient()
 
@@ -1727,6 +1736,7 @@ def perform_cleanup():
         globals().get('sayistay_unified_client_instance'),
         globals().get('kvkk_client_instance'),
         globals().get('bddk_client_instance'),
+        globals().get('btk_client_instance'),
         globals().get('gib_client_instance'),
         globals().get('sigorta_tahkim_client_instance')
     ]
@@ -2130,7 +2140,100 @@ async def get_bddk_document_markdown(
             "error": str(e)
         }
 
-# --- MCP Tools for GİB (Gelir İdaresi Başkanlığı / Revenue Administration) Özelgeler ---
+# --- MCP Tools for BTK (Information and Communication Technologies Authority) ---
+@app.tool(
+    description=(
+        "Use this when searching BTK Board decisions (Bilgi Teknolojileri ve Iletisim Kurumu Kurul Kararlari). "
+        "Supports decision title keywords, decision number, decision date, publication date, and related department filters."
+    ),
+    annotations={
+        "readOnlyHint": True,
+        "openWorldHint": True,
+        "idempotentHint": True
+    }
+)
+async def search_btk_decisions(
+    keywords: str = Field("", description="Keywords searched by BTK's official search endpoint."),
+    decision_no: str = Field("", description="Decision number, e.g. 2026/DK-THD/91."),
+    decision_date: str = Field("", description="Decision date as YYYY-MM-DD."),
+    publication_date: str = Field("", description="Publication date as YYYY-MM-DD."),
+    relevant_unit: str = Field("", description="Related BTK department name."),
+    page: int = Field(1, ge=1, description="Page number."),
+    pageSize: int = Field(10, ge=1, le=50, description="Results per page.")
+) -> Dict[str, Any]:
+    """Search BTK Board decisions."""
+    logger.info(
+        "BTK search tool called with keywords=%s, decision_no=%s, page=%s",
+        keywords,
+        decision_no,
+        page,
+    )
+
+    search_request = BtkSearchRequest(
+        keywords=keywords,
+        decision_no=decision_no,
+        decision_date=decision_date,
+        publication_date=publication_date,
+        relevant_unit=relevant_unit,
+        page=page,
+        pageSize=pageSize,
+    )
+
+    try:
+        result = await btk_client_instance.search_decisions(search_request)
+        logger.info("BTK search completed. Found %s decisions on page %s", len(result.decisions), page)
+        return result.model_dump()
+    except Exception as e:
+        logger.exception("Error searching BTK decisions: %s", e)
+        return BtkSearchResult(
+            decisions=[],
+            total_results=0,
+            page=page,
+            pageSize=pageSize,
+            total_pages=0,
+            query_url=""
+        ).model_dump()
+
+@app.tool(
+    description="Use this when retrieving full text of a BTK Board decision PDF. Returns paginated Markdown.",
+    annotations={
+        "readOnlyHint": True,
+        "openWorldHint": False,
+        "idempotentHint": True
+    }
+)
+async def get_btk_document_markdown(
+    pdf_url: str = Field(..., description="Direct BTK PDF URL returned by search_btk_decisions in the pdf_url field."),
+    page_number: int = Field(1, ge=1, description="Page number for paginated Markdown content. Each page is about 5,000 characters.")
+) -> Dict[str, Any]:
+    """Retrieve a BTK decision PDF as paginated Markdown."""
+    logger.info("BTK document retrieval tool called for URL: %s, page: %s", pdf_url, page_number)
+
+    if not pdf_url or not pdf_url.strip():
+        return BtkDocumentMarkdown(
+            source_url=HttpUrl("https://www.btk.tr/kurul-kararlari"),
+            markdown_chunk=None,
+            current_page=page_number or 1,
+            total_pages=0,
+            is_paginated=False,
+            error_message="pdf_url is required and cannot be empty."
+        ).model_dump()
+
+    try:
+        result = await btk_client_instance.get_document_markdown(pdf_url, page_number or 1)
+        logger.info("BTK document retrieved. Page %s/%s", result.current_page, result.total_pages)
+        return result.model_dump()
+    except Exception as e:
+        logger.exception("Error retrieving BTK document: %s", e)
+        return BtkDocumentMarkdown(
+            source_url=HttpUrl(pdf_url),
+            markdown_chunk=None,
+            current_page=page_number or 1,
+            total_pages=0,
+            is_paginated=False,
+            error_message=f"Error retrieving BTK document: {str(e)}"
+        ).model_dump()
+
 @app.tool(
     description=(
         "Search Turkish GİB özelge records (Revenue Administration tax rulings) - 18k+ rulings on VAT, "

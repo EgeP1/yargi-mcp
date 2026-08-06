@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a FastMCP server that provides programmatic access to Turkish legal databases through the Model Context Protocol (MCP). It integrates with 11 different Turkish legal institutions' databases including Yargıtay (Court of Cassation), Danıştay (Council of State), Constitutional Court, Competition Authority, Court of Accounts (Sayıştay), KVKK (Personal Data Protection Authority), BDDK (Banking Regulation and Supervision Agency), and others.
+This is a FastMCP server that provides programmatic access to Turkish legal databases through the Model Context Protocol (MCP). It integrates with 11 different Turkish legal institutions' databases including Yargıtay (Court of Cassation), Danıştay (Council of State), Constitutional Court, Competition Authority, Court of Accounts (Sayıştay), KVKK (Personal Data Protection Authority), BDDK (Banking Regulation and Supervision Agency), BTK (Information and Communication Technologies Authority), and others.
 
 **🎯 HIGHLY OPTIMIZED**: This MCP server has been extensively optimized for token efficiency, achieving a **56.8% reduction** in MCP overhead (from 14,061 to 6,073 tokens) while maintaining full functionality.
 
@@ -190,6 +190,7 @@ This MCP server has undergone comprehensive optimization to minimize token overh
 9. **kvkk_mcp_module**: KVKK (Personal Data Protection Authority) decisions - Brave API integration
 10. **bddk_mcp_module**: BDDK (Banking Regulation and Supervision Agency) decisions - Tavily API integration
 11. **sayistay_mcp_module**: Sayıştay (Court of Accounts) decisions - Audit findings and appeals
+12. **btk_mcp_module**: BTK (Information and Communication Technologies Authority) Board decisions - Official BTK JSON API + PDF-to-Markdown
 
 ### Key Design Patterns
 - **FastMCP Integration**: Uses FastMCP framework for MCP server implementation
@@ -2077,7 +2078,7 @@ build-backend = "setuptools.build_meta"
 
 ### Current Tool Architecture (Updated)
 
-**Total Tools**: 21 MCP tools across 9 legal institutions (Production Verified ✅)
+**Total Tools**: 28 active MCP tools + 1 optional semantic search tool (`search_bedesten_semantic`), plus Deep Research helpers (`search`, `fetch`) and `check_government_servers_health` (Production Verified ✅)
 
 **Legal Database Coverage**:
 1. **Yargıtay**: ❌ ~~2 tools~~ → Use Bedesten unified instead (DEACTIVATED)
@@ -2089,9 +2090,23 @@ build-backend = "setuptools.build_meta"
 7. **KİK**: 2 tools (search + document) - **v2 API with three decision types: uyusmazlik, duzenleyici, mahkeme** ✅
 8. **Competition Authority**: 2 tools (search + document)
 9. **KVKK**: 2 tools (search + document)
-10. **Sayıştay**: 4 tools (3 search types + document)
+10. **Sayıştay**: 2 tools (unified search + unified document)
+11. **BDDK**: 2 tools (search + document) - Tavily API integration
+12. **BTK**: 2 tools (search + document) - **NEW** Official BTK JSON API + PDF-to-Markdown
+13. **GİB Özelge**: 2 tools (search + document) - Official GİB JSON API
+14. **Sigorta Tahkim**: 3 tools (search + document + within-issue search)
 
 ### Recent Updates
+
+#### ✅ BTK Module Added (Completed - Jul 4, 2026)
+- **PR**: #31 (ab-ihsanoglu) merged into `main` - adds `btk_mcp_module/` (client + models + `__init__`)
+- **Institution**: BTK (Bilgi Teknolojileri ve İletişim Kurumu / Information and Communication Technologies Authority) Board decisions
+- **Data source**: Official BTK JSON API — `GET https://www.btk.tr/api/content/board-decisions` (list); decision PDFs served from `https://www.btk.gov.tr/...` and converted to Markdown via MarkItDown (5,000-char pagination)
+- **New tools**:
+  - `search_btk_decisions(keywords, decision_no, decision_date, publication_date, relevant_unit, page, pageSize)` — filters + pagination (`pageSize` 1-50)
+  - `get_btk_document_markdown(pdf_url, page_number)` — paginated Markdown; `pdf_url` comes from the search result's `pdf_url` field; URL validated to start with `https://www.btk.gov.tr/` or `https://www.btk.tr/`
+- **Integration**: Follows existing module patterns (async httpx client, empty-string defaults, null-safe parsing, `close_client_session()` wired into `perform_cleanup()`); registered in `mcp_server_main.py`, `asgi_app.py`, `Dockerfile`, `pyproject.toml`
+- **Verification**: Both tools verified live via the BTK client — search returned real results (118 hits / 40 pages for "numara"), document retrieval converted a real decision PDF (`2023/TK-YED/40`) to Markdown
 
 #### ✅ Bedesten API Unification (Completed)
 - **Before**: 10 separate tools for different court types

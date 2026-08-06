@@ -112,6 +112,7 @@ async def root():
             "Sayıştay (Court of Accounts)",
             "KVKK (Personal Data Protection Authority)",
             "BDDK (Banking Regulation and Supervision Agency)",
+            "BTK (Information and Communication Technologies Authority)",
             "Bedesten API (Multiple courts)",
             "Sigorta Tahkim Komisyonu (Insurance Arbitration Commission)",
         ],

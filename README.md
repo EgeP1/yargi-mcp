@@ -1,5 +1,7 @@
 # Yargı MCP: Türk Hukuk Kaynakları için MCP Sunucusu
 
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fsaidsurucu%2Fyargi-mcp.svg)](https://mcptoplist.com/server/glama%2Fsaidsurucu%2Fyargi-mcp)
+
 > ## ✨ Profesyonel Sürüm Hazır: Yargı MCP Pro
 >
 > **Mevzuat ve içtihatı tek bir MCP sunucusunda birleştiren** profesyonel sürüm yayında:
@@ -18,7 +20,7 @@
 
 [![Star History Chart](https://api.star-history.com/svg?repos=saidsurucu/yargi-mcp&type=Date)](https://www.star-history.com/#saidsurucu/yargi-mcp&Date)
 
-Bu proje, çeşitli Türk hukuk kaynaklarına (Yargıtay, Danıştay, Emsal Kararlar, Uyuşmazlık Mahkemesi, Anayasa Mahkemesi - Norm Denetimi ile Bireysel Başvuru Kararları, Kamu İhale Kurulu Kararları, Rekabet Kurumu Kararları, Sayıştay Kararları, KVKK Kararları, BDDK Kararları, GİB Özelgeleri ve Sigorta Tahkim Komisyonu Kararları) erişimi kolaylaştıran bir [FastMCP](https://gofastmcp.com/) sunucusu oluşturur. Bu sayede, bu kaynaklardan veri arama ve belge getirme işlemleri, Model Context Protocol (MCP) destekleyen LLM (Büyük Dil Modeli) uygulamaları (örneğin Claude Desktop veya [5ire](https://5ire.app)) ve diğer istemciler tarafından araç (tool) olarak kullanılabilir hale gelir.
+Bu proje, çeşitli Türk hukuk kaynaklarına (Yargıtay, Danıştay, Emsal Kararlar, Uyuşmazlık Mahkemesi, Anayasa Mahkemesi - Norm Denetimi ile Bireysel Başvuru Kararları, Kamu İhale Kurulu Kararları, Rekabet Kurumu Kararları, Sayıştay Kararları, KVKK Kararları, BDDK Kararları, BTK Kararları, GİB Özelgeleri ve Sigorta Tahkim Komisyonu Kararları) erişimi kolaylaştıran bir [FastMCP](https://gofastmcp.com/) sunucusu oluşturur. Bu sayede, bu kaynaklardan veri arama ve belge getirme işlemleri, Model Context Protocol (MCP) destekleyen LLM (Büyük Dil Modeli) uygulamaları (örneğin Claude Desktop veya [5ire](https://5ire.app)) ve diğer istemciler tarafından araç (tool) olarak kullanılabilir hale gelir.
 
 ---
 
@@ -125,6 +127,7 @@ Claude.ai veya başka bir istemci "araç yok" gibi davranırsa:
     * **Sayıştay:** 3 karar türü ile kapsamlı denetim kararlarına erişim + **8 Daire Filtreleme** + **Tarih Aralığı & İçerik Arama** (Genel Kurul yorumlayıcı kararları, Temyiz Kurulu itiraz kararları, Daire ilk derece denetim kararları)
     * **KVKK (Kişisel Verilerin Korunması Kurulu):** Brave Search API ile veri koruma kararlarını arama; uzun karar metinlerini (5.000 karakterlik) sayfalanmış Markdown formatında getirme + **Türkçe Arama** + **Site Hedeflemeli Arama** (kvkk.gov.tr kararları)
     * **BDDK (Bankacılık Düzenleme ve Denetleme Kurumu):** Bankacılık düzenleme kararlarını arama; karar metinlerini Markdown formatında getirme + **Optimized Search** + **"Karar Sayısı" Targeting** + **Spesifik URL Filtreleme** (bddk.org.tr/Mevzuat/DokumanGetir)
+    * **BTK (Bilgi Teknolojileri ve İletişim Kurumu):** Kurul Kararlarını arama (anahtar kelime + karar no + karar tarihi + yayın tarihi + ilgili birim filtreleri); karar PDF'lerini (5.000 karakterlik) sayfalanmış Markdown formatında getirme (btk.gov.tr)
     * **GİB (Gelir İdaresi Başkanlığı) Özelgeleri:** Resmi vergi özelgelerini arama (18.000+ özelge: KDV, Kurumlar, Gelir, ÖTV, Damga vb.); tam metni sayfalanmış Markdown formatında getirme + **Keyword + Özelge No + Kanun No + Tarih Aralığı** + **Otomatik ISO 8601 Dönüşümü** + **Metadata Başlık Bloğu**
     * **Sigorta Tahkim Komisyonu:** Hakem Karar Dergisi (64 sayı, 2010-2025) içindeki sigorta tahkim kararlarını arama; dergi PDF'lerini Markdown formatında getirme + **Sayı İçi Karar Arama** + **Türkçe Büyük/Küçük Harf Desteği** + **Relevance Scoring**
 
@@ -363,7 +366,7 @@ API anahtarınızı [openrouter.ai/keys](https://openrouter.ai/keys) adresinden 
 | `OPENROUTER_EMBEDDING_MODEL` | OpenRouter model id'si | `google/gemini-embedding-001` |
 | `OPENROUTER_EMBEDDING_DIMENSION` | OpenRouter modelinin çıktı boyutu | `3072` |
 
-> 💡 **Not:** Hiçbir embedding sağlayıcı yapılandırılmazsa semantik arama aracı görünmez, diğer 24 araç normal şekilde çalışır.
+> 💡 **Not:** Hiçbir embedding sağlayıcı yapılandırılmazsa semantik arama aracı görünmez, diğer 28 araç normal şekilde çalışır.
 
 </details>
 
@@ -416,6 +419,10 @@ Bu FastMCP sunucusu **26 aktif MCP aracı** + **1 opsiyonel semantik arama arac�
     * `search_bddk_decisions(keywords, page)`: BDDK (Bankacılık Düzenleme ve Denetleme Kurumu) kararlarını arar. **"Karar Sayısı" targeting** + **Spesifik URL filtreleme** (`bddk.org.tr/Mevzuat/DokumanGetir`) + **Optimized search**
     * `get_bddk_document_markdown(document_id: str, page_number: Optional[int] = 1)`: BDDK kararının tam metnini **sayfalanmış Markdown** formatında getirir (5.000 karakterlik sayfa)
 
+### BTK (Bilgi Teknolojileri ve İletişim Kurumu) Araçları (Resmi BTK JSON API)
+    * `search_btk_decisions(keywords, decision_no, decision_date, publication_date, relevant_unit, page, pageSize)`: BTK Kurul Kararlarını arar. **Anahtar kelime + Karar No** (ör. `2026/DK-THD/91`) **+ Karar Tarihi + Yayın Tarihi + İlgili Birim** filtreleri + **Sayfalama** (`pageSize` 1-50)
+    * `get_btk_document_markdown(pdf_url: str, page_number: int = 1)`: BTK kararının PDF'ini indirip **sayfalanmış Markdown** formatında getirir (5.000 karakterlik sayfa). `pdf_url`, `search_btk_decisions` sonucundaki `pdf_url` alanından alınır (`btk.gov.tr`)
+
 ### GİB (Gelir İdaresi Başkanlığı) Özelge Araçları (Resmi GİB JSON API)
     * `search_gib_ozelge(keywords, ozelgeNo, kanunNo, ozelgeStartDate, ozelgeEndDate, page, pageSize)`: GİB özelgelerini (Türk Gelir İdaresi Başkanlığı vergi özelgeleri) arar — **18.000+ özelge** (KDV, Kurumlar, Gelir, ÖTV, Damga, VUK vb.). **Keyword + Özelge No + Kanun No + Tarih Aralığı** + **Otomatik ISO 8601 Dönüşümü** (`YYYY-MM-DD` girdileri otomatik olarak full ISO 8601'e çevrilir)
     * `get_gib_ozelge_document_markdown(ozelge_id: int, page_number: int = 1)`: Belirli bir özelgenin tam metnini **sayfalanmış Markdown** formatında getirir (5.000 karakterlik sayfa) + **Metadata başlık bloğu** (Başlık, Sayı, Tarih, Kanun, Kaynak URL)
@@ -444,8 +451,8 @@ Bu FastMCP sunucusu **26 aktif MCP aracı** + **1 opsiyonel semantik arama arac�
 - **Korunan İşlevsellik:** %100 özellik desteği devam ediyor
 
 **GENEL İSTATİSTİKLER:**
-- **Toplam Mahkeme/Kurum:** 15 farklı hukuki kurum (GİB Özelgeleri ve Sigorta Tahkim Komisyonu dahil)
-- **Toplam MCP Tool:** 26 aktif araç + 1 opsiyonel semantik arama aracı
+- **Toplam Mahkeme/Kurum:** 16 farklı hukuki kurum (BTK, GİB Özelgeleri ve Sigorta Tahkim Komisyonu dahil)
+- **Toplam MCP Tool:** 28 aktif araç + 1 opsiyonel semantik arama aracı
 - **Daire/Kurul Filtreleme:** 87 farklı seçenek (52 Yargıtay + 27 Danıştay + 8 Sayıştay)
 - **Tarih Filtreleme:** Birleşik Bedesten API aracında ISO 8601 formatında tam tarih aralığı desteği
 - **Kesin Cümle Arama:** Birleşik Bedesten API aracında çift tırnak ile tam cümle arama (`"\"mülkiyet kararı\""` formatı)
