@@ -10,7 +10,11 @@ from mcp.types import JSONRPCNotification as _McpJSONRPCNotification, JSONRPCMes
 from pydantic import ConfigDict as _ConfigDict
 _McpJSONRPCNotification.model_config = _ConfigDict(extra="forbid")
 _McpJSONRPCNotification.model_rebuild(force=True)
-_McpJSONRPCMessage.model_rebuild(force=True)
+# 2026-09-09 (AHA): mcp SDK'nın yeni sürümlerinde JSONRPCMessage pydantic modeli değil, tip birleşimi
+# (types.UnionType) → model_rebuild yok → import anında AttributeError ile servis çöküyordu (Railway
+# rebuild'inde sabitlenmemiş bağımlılık yeni sürümü çekti). Varsa çağır, yoksa gerek yok.
+if hasattr(_McpJSONRPCMessage, "model_rebuild"):
+    _McpJSONRPCMessage.model_rebuild(force=True)
 # --- End MCP Spec Compliance ---
 
 import asyncio
