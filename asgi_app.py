@@ -17,6 +17,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 
 from mcp_server_main import create_app
+from aha_watchdog import start_watchdog
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -28,7 +29,14 @@ cors_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 mcp_server = create_app()
 
 # Create MCP Starlette sub-application
-mcp_app = mcp_server.http_app(path="/")
+# AHA (2026-09-10): OTURUMSUZ mod. Oturumlu modda her istemci oturumu (Vercel'in her soğuk
+# başlangıcı, her test prosesi) sunucu belleğinde task+tampon olarak kalıyor ve hiçbir zaman
+# süpürülmüyordu ("Created new transport with session ID" birikimi) → ~24 saatte süreç askıya
+# düştü (TCP kabul, 0 bayt, /health dahil). Stateless: her istek bağımsız, birikecek durum yok.
+# Geri dönüş: MCP_STATELESS=0.
+_stateless = os.getenv("MCP_STATELESS", "1") != "0"
+mcp_app = mcp_server.http_app(path="/", stateless_http=_stateless)
+logger.info("AHA: MCP transport %s", "STATELESS" if _stateless else "stateful (session manager)")
 
 
 # Configure JSON encoder for proper Turkish character support
@@ -140,8 +148,18 @@ async def status():
 # Mount MCP app at /mcp/
 app.mount("/mcp/", mcp_app)
 
-# Set the lifespan context after mounting
-app.router.lifespan_context = mcp_app.lifespan
+# Set the lifespan context after mounting — AHA bekçisi de burada başlar (uvicorn dinlerken)
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def _lifespan(_app):
+    async with mcp_app.lifespan(_app):
+        start_watchdog()
+        yield
+
+
+app.router.lifespan_context = _lifespan
 
 # Export for uvicorn
 __all__ = ["app"]
