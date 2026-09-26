@@ -31,6 +31,14 @@ class BedestenSearchData(BaseModel):
     kararTarihiEnd: Optional[str] = Field(None, description="End date (ISO 8601 format)")
     sortFields: List[str] = Field(default=["KARAR_TARIHI"], description="Sort fields")
     sortDirection: str = Field(default="desc", description="Sort direction (asc/desc)")
+    # AHA 2026-09-26: Bedesten esas/karar numarasını KESİN filtre olarak kabul ediyor (doğrudan API probe:
+    # esasNoYil=2025+esasNoSira=7717 → total=1, 5/5 bilinen karar). "2025/7717" FRAZI ise artık
+    # ADALET_PARAMETER_VALIDATION_EXCEPTION ("Lütfen arama kriteri girin") veriyor — bölü işareti frazı boşa
+    # düşürüyor. Alanlar phrase boşken de reddediliyor → çağıran evrensel bir jeton ('"karar"') göndermeli.
+    esasNoYil: Optional[int] = Field(None, description="Esas (case file) year, e.g. 2025 — exact filter")
+    esasNoSira: Optional[int] = Field(None, description="Esas sequence number, e.g. 7717 — exact filter")
+    kararNoYil: Optional[int] = Field(None, description="Karar (decision) year — exact filter")
+    kararNoSira: Optional[int] = Field(None, description="Karar sequence number — exact filter")
 
 class BedestenSearchRequest(BaseModel):
     data: BedestenSearchData

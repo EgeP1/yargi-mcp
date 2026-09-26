@@ -1081,7 +1081,11 @@ For best results, use exact phrases with quotes for legal terms."""),
         • Danıştay: D1-D17 (1-17. Daire), DBGK (Büyük Gen.Kur.), IDDK (İdare Dava Daireleri Kurulu), VDDK (Vergi Dava Daireleri Kurulu), IBK (İçtihatları Birleştirme Kurulu), IIK (İdari İşler Kurulu), DBK (Başkanlar Kurulu), AYIM (Askeri Yüksek İdare Mahkemesi), AYIM1-3 (Askeri Yüksek İdare Mahkemesi 1-3. Daire)
         """),
     kararTarihiStart: str = Field("", description="Start date (ISO 8601 format)"),
-    kararTarihiEnd: str = Field("", description="End date (ISO 8601 format)")
+    kararTarihiEnd: str = Field("", description="End date (ISO 8601 format)"),
+    esasNoYil: Optional[int] = Field(None, description="Exact filter: esas (case file) year, e.g. 2025. Pair with esasNoSira. phrase must still be non-empty (use '\"karar\"' as a universal token)."),
+    esasNoSira: Optional[int] = Field(None, description="Exact filter: esas sequence number, e.g. 7717"),
+    kararNoYil: Optional[int] = Field(None, description="Exact filter: karar (decision) year"),
+    kararNoSira: Optional[int] = Field(None, description="Exact filter: karar sequence number")
 ) -> dict:
     """Search Turkish legal databases via unified Bedesten API."""
     
@@ -1106,24 +1110,31 @@ For best results, use exact phrases with quotes for legal terms."""),
         phrase=phrase,
         birimAdi=birimAdi,
         kararTarihiStart=kararTarihiStart,
-        kararTarihiEnd=kararTarihiEnd
+        kararTarihiEnd=kararTarihiEnd,
+        esasNoYil=esasNoYil,
+        esasNoSira=esasNoSira,
+        kararNoYil=kararNoYil,
+        kararNoSira=kararNoSira,
     )
     
     search_request = BedestenSearchRequest(data=search_data)
     
-    logger.info(f"Searching bedesten: phrase='{phrase}', court_types={court_types}, birimAdi='{birimAdi}', page={pageNumber}")
+    logger.info(f"Searching bedesten: phrase='{phrase}', court_types={court_types}, birimAdi='{birimAdi}', page={pageNumber}, esas={esasNoYil}/{esasNoSira}, karar={kararNoYil}/{kararNoSira}")
     
     try:
         response = await bedesten_client_instance.search_documents(search_request)
 
         if response.data is None:
+            # Bedesten'in kendi hata metnini (FMTE) taşı — "No data" çağıranı boşuna "çöktü" sandırıyordu
+            fmte = (response.metadata or {}).get("FMTE") if isinstance(response.metadata, dict) else None
             return {
                 "decisions": [],
                 "total_records": 0,
                 "requested_page": pageNumber,
                 "page_size": pageSize,
                 "searched_courts": court_types,
-                "error": "No data returned from Bedesten API"
+                "error": "No data returned from Bedesten API" + (f" ({fmte})" if fmte else ""),
+                "upstream_metadata": response.metadata,
             }
 
         # Add null safety checks for response.data fields

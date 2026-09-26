@@ -158,9 +158,10 @@ class BedestenApiClient:
         
         try:
             # Create request dict and remove birimAdi if empty
-            request_dict = search_request.model_dump()
-            if not request_dict["data"]["birimAdi"]:  # Remove if empty string
-                del request_dict["data"]["birimAdi"]
+            # exclude_none: esas/karar filtre alanları yalnız verildiğinde gövdeye girer (AHA 2026-09-26)
+            request_dict = search_request.model_dump(exclude_none=True)
+            if not request_dict["data"].get("birimAdi"):  # Remove if empty string
+                request_dict["data"].pop("birimAdi", None)
             
             await self._bucket.acquire(max_wait=self._DEFAULT_MAX_WAIT_S)
             response = await self.http_client.post(
@@ -171,6 +172,11 @@ class BedestenApiClient:
                 self._handle_429(response, "search")
             response.raise_for_status()
             response_json = response.json()
+            # data=null + metadata.FMTY=ERROR = Bedesten parametre doğrulama hatası (örn. bölülü rakam frazı);
+            # sessizce "No data" olmasın, sebebi logla (AHA 2026-09-26)
+            meta = response_json.get("metadata") if isinstance(response_json, dict) else None
+            if response_json.get("data") is None and isinstance(meta, dict) and meta.get("FMTY") == "ERROR":
+                logger.warning(f"BedestenApiClient: search returned ERROR metadata: {meta.get('FMC')} — {meta.get('FMTE')}")
 
             # Parse and return the response
             return BedestenSearchResponse(**response_json)
