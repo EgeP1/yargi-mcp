@@ -34,57 +34,78 @@ class BedestenRateLimited(Exception):
         super().__init__(f"local bucket would block {retry_after:.1f}s")
 
 
-class _TokenBucket:
-    """Asyncio token bucket with explicit back-pressure.
+class _SlidingWindow:
+    """Asyncio sliding-window limiter mirroring the MEASURED Bedesten limit.
 
-    Measured Bedesten limit (per source IP, 2026-05-08): 10 requests per
-    rolling 30s window with full refill — equivalent to capacity=10,
-    refill_rate=1 token / 3s. Even with margin, 429s still leak through
-    when other clients share the egress IP, so we also expose
-    ``penalize_until`` so callers can freeze the bucket when the server
-    actually returns 429 (Retry-After).
+    2026-09-17 measurement (AHA worker, 3 bucket settings -> identical 42 s):
+    Bedesten accepts ~7 requests per rolling 30 s window per source IP, no
+    burst. A token bucket (capacity/refill) only approximates this; the
+    window is exact, so requests wait precisely until the oldest slot
+    expires instead of a fixed spacing.
+
+    429 handling (2026-10-05, replaces the hard freeze): a server 429 used to
+    call ``penalize_until`` which drained the bucket and paused EVERY caller
+    for Retry-After (15-30 s). Now ``penalize`` pauses briefly
+    (``BEDESTEN_429_PAUSE_S``, default 5 s) and lowers the effective limit by
+    ``BEDESTEN_429_LIMIT_DROP`` (default 2) for one full window after the
+    pause, so throughput degrades smoothly instead of stopping. Total time
+    for a burst of N requests is unchanged (still bounded by limit/window).
     """
 
-    def __init__(self, capacity: int, refill_per_s: float) -> None:
-        self.capacity = float(capacity)
-        self.refill_per_s = float(refill_per_s)
-        self._tokens = float(capacity)
-        self._last = time.monotonic()
+    def __init__(self, limit: int, window_s: float,
+                 pause_429_s: float = 5.0, limit_drop_429: int = 2) -> None:
+        self.limit = max(1, int(limit))
+        self.window_s = float(window_s)
+        self.pause_429_s = float(pause_429_s)
+        self.limit_drop_429 = max(0, int(limit_drop_429))
+        self._granted: list = []  # monotonic timestamps of granted slots
         self._not_before = 0.0
+        self._reduced_until = 0.0
         self._lock = asyncio.Lock()
 
+    def _effective_limit(self, now: float) -> int:
+        if now < self._reduced_until:
+            return max(1, self.limit - self.limit_drop_429)
+        return self.limit
+
+    def _purge(self, now: float) -> None:
+        edge = now - self.window_s
+        while self._granted and self._granted[0] <= edge:
+            self._granted.pop(0)
+
     async def acquire(self, max_wait: Optional[float] = None) -> None:
-        """Acquire one token. If ``max_wait`` is set and the next wait would
-        exceed it, raise :class:`BedestenRateLimited` immediately instead of
-        sleeping — keeps a single rate-limited request from holding the
-        worker-slot for the full bucket-pause window (up to ~30s on 429)."""
+        """Acquire one slot. With ``max_wait`` set, raise
+        :class:`BedestenRateLimited` instead of sleeping longer than that."""
         deadline = (time.monotonic() + max_wait) if max_wait is not None else None
         while True:
             async with self._lock:
                 now = time.monotonic()
+                self._purge(now)
                 if now < self._not_before:
                     wait_s = self._not_before - now
+                elif len(self._granted) < self._effective_limit(now):
+                    self._granted.append(now)
+                    return
                 else:
-                    self._tokens = min(
-                        self.capacity,
-                        self._tokens + (now - self._last) * self.refill_per_s,
-                    )
-                    self._last = now
-                    if self._tokens >= 1.0:
-                        self._tokens -= 1.0
-                        return
-                    wait_s = (1.0 - self._tokens) / self.refill_per_s
-            if deadline is not None:
-                remaining = deadline - time.monotonic()
-                if wait_s > remaining:
-                    raise BedestenRateLimited(retry_after=wait_s)
+                    wait_s = (self._granted[0] + self.window_s) - now
+                wait_s = max(wait_s, 0.05)
+            if deadline is not None and wait_s > (deadline - time.monotonic()):
+                raise BedestenRateLimited(retry_after=wait_s)
             await asyncio.sleep(wait_s)
 
+    def penalize(self, retry_after: float) -> float:
+        """Server said 429. Short pause + reduced limit for one window.
+        Returns the pause actually applied (seconds)."""
+        now = time.monotonic()
+        pause = min(max(retry_after, 0.0), self.pause_429_s)
+        self._not_before = max(self._not_before, now + pause)
+        self._reduced_until = max(self._reduced_until, now + pause + self.window_s)
+        return pause
+
+    # Backward-compatible name (old token bucket API): hard pause until deadline.
     def penalize_until(self, monotonic_deadline: float) -> None:
-        """Pause the bucket until ``monotonic_deadline`` (drains tokens)."""
         self._not_before = max(self._not_before, monotonic_deadline)
-        self._tokens = 0.0
-        self._last = time.monotonic()
+
 
 class BedestenApiClient:
     """
@@ -102,8 +123,18 @@ class BedestenApiClient:
     #   BEDESTEN_RATE_REFILL_S (default 3.5; seconds per token)
     #   BEDESTEN_RATE_MAX_WAIT_S (default 8.0; max seconds to wait in the
     #     local bucket before returning a structured 429 to the caller)
-    _DEFAULT_CAPACITY = int(os.getenv("BEDESTEN_RATE_CAPACITY", "1"))
-    _DEFAULT_REFILL_S = float(os.getenv("BEDESTEN_RATE_REFILL_S", "3.5"))
+    # 2026-10-05: sliding window (measured 7 req / 30 s rolling, no burst).
+    # Old BEDESTEN_RATE_CAPACITY / BEDESTEN_RATE_REFILL_S are no longer read.
+    #   BEDESTEN_WINDOW_LIMIT (default 7)   requests per window
+    #   BEDESTEN_WINDOW_S     (default 30)  window length, seconds
+    #   BEDESTEN_429_PAUSE_S  (default 5)   short pause after a server 429
+    #   BEDESTEN_429_LIMIT_DROP (default 2) limit reduction for one window after 429
+    #   BEDESTEN_RATE_MAX_WAIT_S (default 8.0; unchanged) max local wait before
+    #     returning a structured 429 to the caller
+    _WINDOW_LIMIT = int(os.getenv("BEDESTEN_WINDOW_LIMIT", "7"))
+    _WINDOW_S = float(os.getenv("BEDESTEN_WINDOW_S", "30"))
+    _PAUSE_429_S = float(os.getenv("BEDESTEN_429_PAUSE_S", "5"))
+    _LIMIT_DROP_429 = int(os.getenv("BEDESTEN_429_LIMIT_DROP", "2"))
     _DEFAULT_MAX_WAIT_S = float(os.getenv("BEDESTEN_RATE_MAX_WAIT_S", "8.0"))
 
     def __init__(self, request_timeout: float = 60.0):
@@ -123,9 +154,11 @@ class BedestenApiClient:
             },
             timeout=request_timeout
         )
-        self._bucket = _TokenBucket(
-            capacity=self._DEFAULT_CAPACITY,
-            refill_per_s=1.0 / self._DEFAULT_REFILL_S,
+        self._bucket = _SlidingWindow(
+            limit=self._WINDOW_LIMIT,
+            window_s=self._WINDOW_S,
+            pause_429_s=self._PAUSE_429_S,
+            limit_drop_429=self._LIMIT_DROP_429,
         )
 
     def _handle_429(self, response: httpx.Response, op: str) -> None:
@@ -135,11 +168,13 @@ class BedestenApiClient:
             retry_after = float(retry_after_raw)
         except (TypeError, ValueError):
             retry_after = 30.0
-        # Cap penalty so a hostile/buggy server can't freeze us indefinitely.
+        # Cap so a hostile/buggy server can't freeze us; the window then
+        # applies only a short pause + reduced limit (smooth degradation).
         retry_after = max(1.0, min(retry_after, 60.0))
-        self._bucket.penalize_until(time.monotonic() + retry_after + 0.5)
+        pause = self._bucket.penalize(retry_after)
         logger.warning(
-            f"BedestenApiClient: 429 on {op}; bucket paused {retry_after + 0.5:.1f}s"
+            f"BedestenApiClient: 429 on {op}; window paused {pause:.1f}s, "
+            f"limit reduced by {self._LIMIT_DROP_429} for {self._WINDOW_S:.0f}s"
         )
     
     async def search_documents(self, search_request: BedestenSearchRequest) -> BedestenSearchResponse:
